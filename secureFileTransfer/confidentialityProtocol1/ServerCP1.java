@@ -1,4 +1,4 @@
-package CSElabs;
+package CSE_Project;
 
 import javax.crypto.Cipher;
 import java.net.*;
@@ -9,6 +9,9 @@ import java.security.spec.PKCS8EncodedKeySpec;
 
 public class ServerCP1 {
     private static final int PORT_NUMBER = 1234;
+    private static final String privateKeyFile = "D:\\Library\\Documents\\SUTD\\50.005 Computer System Engineering\\NSProjectRelease\\NSProjectRelease\\privateServer.der";
+    private static final String signedCertificateFile = "D:\\Library\\Documents\\SUTD\\50.005 Computer System Engineering\\NSProjectRelease\\NSProjectRelease\\Signed Certificate - 1001294.crt";
+    private static final String uploadedFile = "data.txt";
 
     public static void main(String[] args) {
         try {
@@ -31,15 +34,15 @@ public class ServerCP1 {
             System.out.println(stringIn.readLine());
 
             // reply to client
-            stringOut.println("Hello, this is SecStore!");
+            stringOut.println("SERVER>> Hello, this is SecStore!");
             stringOut.flush();
             System.out.println("Sent to client: Hello, this is SecStore!");
 
             // retrieve nonce from client
             String nonceLength = stringIn.readLine();
             byte[] nonce = new byte[Integer.parseInt(nonceLength)];
-            byteIn.read(nonce, 0, nonce.length);
-            System.out.println("Nonce received");
+            readByte(nonce,byteIn);
+            System.out.println("Received fresh nonce from client");
 
             // load private key from .der
             PrivateKey privateKey = loadPrivateKey();
@@ -48,19 +51,18 @@ public class ServerCP1 {
             Cipher rsaCipherEncrypt = Cipher.getInstance("RSA/ECB/PKCS1Padding");
             rsaCipherEncrypt.init(Cipher.ENCRYPT_MODE, privateKey);
 
-            // encrypt nonce and send encrypted nonce
+            // encrypt nonce
             byte[] encryptedNonce = rsaCipherEncrypt.doFinal(nonce);
             stringOut.println(Integer.toString(encryptedNonce.length));
             byteOut.write(encryptedNonce, 0, encryptedNonce.length);
             byteOut.flush();
-            System.out.println("Encrypted nonce sent");
+            System.out.println("Sent to client encrypted nonce");
 
             // wait for client response
             System.out.println(stringIn.readLine());
 
             // send signed certificate
-            String certificateFileName = "C:\\Users\\Esmond\\Desktop\\NSAssignment\\Signed Certificate - 1001294.crt";
-            File certificateFile = new File(certificateFileName);
+            File certificateFile = new File(signedCertificateFile);
             byte[] certByteArray = new byte[(int) certificateFile.length()];
             BufferedInputStream bis = new BufferedInputStream(new FileInputStream(certificateFile));
             bis.read(certByteArray, 0, certByteArray.length);
@@ -69,25 +71,41 @@ public class ServerCP1 {
             System.out.println(stringIn.readLine());
             byteOut.write(certByteArray, 0, certByteArray.length);
             byteOut.flush();
+            System.out.println("Sent to client certificate");
+
+            // receive messages from client
+            String clientResult = stringIn.readLine();
+            System.out.println(clientResult);
+            if (clientResult.contains("Bye!")) {
+                closeConnections(byteOut, byteIn, stringOut, stringIn, clientSocket);
+            }
+
+
+            // **************** END OF AP ***************
+
+
+            // start file transfer
+            System.out.println("INITIALIZING FILE TRANSFER");
 
             // create cipher object and initialize is as encrypt mode, use PUBLIC key.
             Cipher rsaCipherDecrypt = Cipher.getInstance("RSA/ECB/PKCS1Padding");
             rsaCipherDecrypt.init(Cipher.DECRYPT_MODE, privateKey);
 
             // start file transfer
-            System.out.println("File transfer initiated");
             String encryptedFileLength  = stringIn.readLine();
-            byte[] encryptedFile = new byte[Integer.parseInt(encryptedFileLength)];
-            byteIn.read(encryptedFile, 0, encryptedFile.length);
-
-            byte[] decryptedFile = decryptFile(encryptedFile, rsaCipherDecrypt);
-            System.out.println(new String(decryptedFile));
-
-            stringOut.println("File transfer successful");
+            stringOut.println("SERVER>> Ready to receive encrypted file");
             stringOut.flush();
-            System.out.println("File transfer successful");
+            byte[] encryptedFile = new byte[Integer.parseInt(encryptedFileLength)];
+            readByte(encryptedFile,byteIn);
+            System.out.println("Received encrypted file from client");
 
-            closeConnections(byteOut, byteIn, stringOut, stringIn, clientSocket, serverSocket);
+            decryptFileCP1(encryptedFile, rsaCipherDecrypt);
+
+            // send confirmation of successful upload to client
+            stringOut.println("SERVER>> Upload file successful!");
+            stringOut.flush();
+
+            closeConnections(byteOut, byteIn, stringOut, stringIn, clientSocket);
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -95,8 +113,7 @@ public class ServerCP1 {
     }
 
     private static PrivateKey loadPrivateKey() throws Exception{
-        String privateKeyFileName = "C:\\Users\\Esmond\\Desktop\\NSAssignment\\privateServer.der";
-        Path privateKeyPath = Paths.get(privateKeyFileName);
+        Path privateKeyPath = Paths.get(privateKeyFile);
         byte[] privateKeyByteArray = Files.readAllBytes(privateKeyPath);
 
         PKCS8EncodedKeySpec keySpec = new PKCS8EncodedKeySpec(privateKeyByteArray);
@@ -106,7 +123,26 @@ public class ServerCP1 {
         return privateKey;
     }
 
-    private static byte[] decryptFile(byte[] encryptedFile, Cipher rsaCipherDecrypt) throws Exception {
+    private static void closeConnections(OutputStream byteOut, InputStream byteIn, PrintWriter stringOut, BufferedReader stringIn, Socket socket) throws IOException {
+        byteOut.close();
+        byteIn.close();
+        stringOut.close();
+        stringIn.close();
+        socket.close();
+    }
+
+    private static void readByte(byte[] byteArray, InputStream byteIn) throws Exception{
+        int offset = 0;
+        int numRead = 0;
+        while (offset < byteArray.length && (numRead = byteIn.read(byteArray, offset, byteArray.length - offset)) >= 0){
+            offset += numRead;
+        }
+        if (offset < byteArray.length) {
+            System.out.println("File reception incomplete!");
+        }
+    }
+
+    private static void decryptFileCP1(byte[] encryptedFile, Cipher rsaCipherDecrypt) throws Exception {
         ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
         int count = 0;
         while (count < encryptedFile.length) {
@@ -122,15 +158,10 @@ public class ServerCP1 {
         byte[] decryptedFile = byteArrayOutputStream.toByteArray();
         byteArrayOutputStream.close();
 
-        return decryptedFile;
+        // create new file and write to file
+        FileOutputStream fileOut = new FileOutputStream(uploadedFile);
+        fileOut.write(decryptedFile, 0, decryptedFile.length);
+        System.out.println("File registered into system.");
     }
 
-    private static void closeConnections(OutputStream byteOut, InputStream byteIn, PrintWriter stringOut, BufferedReader stringIn, Socket socket, ServerSocket serverSocket) throws IOException {
-        byteOut.close();
-        byteIn.close();
-        stringOut.close();
-        stringIn.close();
-        socket.close();
-        serverSocket.close();
-    }
 }

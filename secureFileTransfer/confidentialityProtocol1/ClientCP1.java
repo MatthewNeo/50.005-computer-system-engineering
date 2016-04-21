@@ -1,11 +1,12 @@
-package CSElabs;
+package CSE_Project;
 
-import com.sun.xml.internal.ws.policy.privateutil.PolicyUtils;
 
 import javax.crypto.Cipher;
 import java.io.*;
 import java.net.Socket;
-import java.nio.file.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.security.*;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
@@ -14,7 +15,8 @@ import java.util.Arrays;
 public class ClientCP1 {
     private static final String SERVER_NAME = "localhost";
     private static final int SERVER_PORT = 1234;
-    private static final String fileName = "C:\\Users\\Esmond\\Desktop\\NSAssignment\\smallFile.txt";
+    private static final String uploadFile = "D:\\Library\\Documents\\SUTD\\50.005 Computer System Engineering\\NSProjectRelease\\NSProjectRelease\\sampleData\\largeFile.txt";
+    private static final String CACertFile = "D:\\Library\\Documents\\SUTD\\50.005 Computer System Engineering\\NSProjectRelease\\NSProjectRelease\\CA.crt";
 
     public static void main(String[] args) {
         try {
@@ -30,7 +32,7 @@ public class ClientCP1 {
             BufferedReader stringIn = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
             // initiate conversation with server
-            stringOut.println("Hello SecStore, please prove your identity!");
+            stringOut.println("CLIENT>> Hello SecStore, please prove your identity!");
             stringOut.flush();
             System.out.println("Sent to server: Hello SecStore, please prove your identity!");
 
@@ -44,22 +46,22 @@ public class ClientCP1 {
                 stringOut.println(Integer.toString(nonce.length));
                 byteOut.write(nonce);
                 byteOut.flush();
-                System.out.println("Fresh nonce sent");
+                System.out.println("Sent to server a fresh nonce");
             }
 
             // retrieve encrypted nonce from server
             String encryptedNonceLength = stringIn.readLine();
             byte[] encryptedNonce = new byte[Integer.parseInt(encryptedNonceLength)];
-            byteIn.read(encryptedNonce, 0, encryptedNonce.length);
-            System.out.println("Encrypted nonce received");
+            readByte(encryptedNonce,byteIn);
+            System.out.println("Received encrypted nonce from server");
 
             // ask for certificate
-            stringOut.println("Give me your certificate signed by CA");
+            stringOut.println("CLIENT>> Give me your certificate signed by CA");
             stringOut.flush();
             System.out.println("Sent to server: Give me your certificate signed by CA");
 
             // extract public key from CA certificate
-            InputStream fis = new FileInputStream("C:\\Users\\Esmond\\Desktop\\NSAssignment\\CA.crt");
+            InputStream fis = new FileInputStream(CACertFile);
             CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
             X509Certificate caCert = (X509Certificate) certificateFactory.generateCertificate(fis);
             PublicKey caPublicKey = caCert.getPublicKey();
@@ -67,47 +69,70 @@ public class ClientCP1 {
 
             // retrieve signed certificate from server
             String certByteArrayLength = stringIn.readLine();
-            stringOut.println("Ready to receive signed certificate");
+            stringOut.println("CLIENT>> Ready to get certificate");
             stringOut.flush();
             byte[] certByteArray = new byte[Integer.parseInt(certByteArrayLength)];
-            byteIn.read(certByteArray, 0, certByteArray.length);
-//            System.out.println(new String(certByteArray));
+            readByte(certByteArray,byteIn);
+            System.out.println("Received certificate from server");
+
+            // verifying signed certificate from server using CA public key
+            System.out.println("Verifying certificate from server");
             InputStream certInputStream = new ByteArrayInputStream(certByteArray);
             X509Certificate signedCertificate = (X509Certificate) certificateFactory.generateCertificate(certInputStream);
 
-            // check validity and verify signed certificate
             signedCertificate.checkValidity();
             signedCertificate.verify(caPublicKey);
-            System.out.println("Signed certificate received and validity checked");
+            System.out.println("Signed certificate validity checked and verified");
 
-            // create cipher object and initialize is as decrypt mode, using PUBLIC key.
+            // extract public key from server's signed certificate
             PublicKey serverPublicKey = signedCertificate.getPublicKey();
+
+            // create cipher object and initialize it as decrypt mode, using PUBLIC key.
             Cipher cipherDecrypt = Cipher.getInstance("RSA/ECB/PKCS1Padding");
             cipherDecrypt.init(Cipher.DECRYPT_MODE, serverPublicKey);
 
             // decrypt nonce
             byte[] decryptedNonce = cipherDecrypt.doFinal(encryptedNonce);
+
+            // handles connection after decrypting nonce.
             if (Arrays.equals(nonce, decryptedNonce)) {
                 System.out.println("Server's identity verified");
+                stringOut.println("CLIENT>> Ready to upload file!");
+                stringOut.flush();
             } else {
                 System.out.println("Identity verification unsuccessful, closing all connections");
+                stringOut.println("CLIENT>> Bye!");
                 closeConnections(byteOut, byteIn, stringOut, stringIn, socket);
             }
+
+
+            // **************** END OF AP ***************
+
+            // start file transfer
+            System.out.println("INITIALIZING FILE TRANSFER");
+
+            // initial time mark
+            Long startTime = System.currentTimeMillis();
 
             // create cipher object and initialize is as encrypt mode, use PUBLIC key.
             Cipher rsaCipherEncrypt = Cipher.getInstance("RSA/ECB/PKCS1Padding");
             rsaCipherEncrypt.init(Cipher.ENCRYPT_MODE, serverPublicKey);
 
             // start file transfer
-            System.out.println("File transfer initiated");
-            byte[] encryptedFile = encryptFile(fileName, rsaCipherEncrypt);
+            byte[] encryptedFile = encryptFileCP1(uploadFile, rsaCipherEncrypt);
 
             // send encrypted file
             stringOut.println(encryptedFile.length);
+            System.out.println(stringIn.readLine());
             byteOut.write(encryptedFile, 0, encryptedFile.length);
             byteOut.flush();
 
+            // confirmation of successful file upload
             System.out.println(stringIn.readLine());
+
+            Long endTime = System.currentTimeMillis();
+            System.out.println("Uploading time spent is: " + (endTime-startTime) + "ms");
+
 
             closeConnections(byteOut, byteIn, stringOut, stringIn, socket);
 
@@ -120,13 +145,32 @@ public class ClientCP1 {
         // create secure random number generator
         SecureRandom secureRandom = SecureRandom.getInstance("SHA1PRNG");
 
-        // get 64 random bytes
+        // get 1024 random bytes
         byte[] nonce = new byte[64];
         secureRandom.nextBytes(nonce);
         return nonce;
     }
 
-    private static byte[] encryptFile(String fileName, Cipher rsaCipherEncrypt) throws Exception {
+    private static void closeConnections(OutputStream byteOut, InputStream byteIn, PrintWriter stringOut, BufferedReader stringIn, Socket socket) throws IOException {
+        byteOut.close();
+        byteIn.close();
+        stringOut.close();
+        stringIn.close();
+        socket.close();
+    }
+
+    private static void readByte(byte[] byteArray, InputStream byteIn) throws Exception{
+        int offset = 0;
+        int numRead = 0;
+        while (offset < byteArray.length && (numRead = byteIn.read(byteArray, offset, byteArray.length - offset)) >= 0){
+            offset += numRead;
+        }
+        if (offset < byteArray.length) {
+            System.out.println("File reception incomplete!");
+        }
+    }
+
+    private static byte[] encryptFileCP1(String fileName, Cipher rsaCipherEncrypt) throws Exception {
         Path filePath = Paths.get(fileName);
         byte[] fileData = Files.readAllBytes(filePath);
 
@@ -146,13 +190,5 @@ public class ClientCP1 {
         byteArrayOutputStream.close();
 
         return encryptedFile;
-    }
-
-    private static void closeConnections(OutputStream byteOut, InputStream byteIn, PrintWriter stringOut, BufferedReader stringIn, Socket socket) throws IOException {
-        byteOut.close();
-        byteIn.close();
-        stringOut.close();
-        stringIn.close();
-        socket.close();
     }
 }

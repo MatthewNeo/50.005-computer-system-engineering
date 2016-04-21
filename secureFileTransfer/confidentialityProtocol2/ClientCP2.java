@@ -14,7 +14,8 @@ import java.util.Arrays;
 public class ClientCP2 {
     private static final String SERVER_NAME = "localhost";
     private static final int SERVER_PORT = 1234;
-    private static final String fileName = "C:\\Users\\Esmond\\Desktop\\NSAssignment\\smallFile.txt";
+    private static final String uploadFile = "D:\\Library\\Documents\\SUTD\\50.005 Computer System Engineering\\NSProjectRelease\\NSProjectRelease\\sampleData\\smallFile.txt";
+    private static final String CACertFile = "D:\\Library\\Documents\\SUTD\\50.005 Computer System Engineering\\NSProjectRelease\\NSProjectRelease\\CA.crt";
 
     public static void main(String[] args) {
         try {
@@ -30,7 +31,7 @@ public class ClientCP2 {
             BufferedReader stringIn = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
             // initiate conversation with server
-            stringOut.println("Hello SecStore, please prove your identity!");
+            stringOut.println("CLIENT>> Hello SecStore, please prove your identity!");
             stringOut.flush();
             System.out.println("Sent to server: Hello SecStore, please prove your identity!");
 
@@ -44,22 +45,22 @@ public class ClientCP2 {
                 stringOut.println(Integer.toString(nonce.length));
                 byteOut.write(nonce);
                 byteOut.flush();
-                System.out.println("Fresh nonce sent");
+                System.out.println("Sent to server a fresh nonce");
             }
 
             // retrieve encrypted nonce from server
             String encryptedNonceLength = stringIn.readLine();
             byte[] encryptedNonce = new byte[Integer.parseInt(encryptedNonceLength)];
-            byteIn.read(encryptedNonce, 0, encryptedNonce.length);
-            System.out.println("Encrypted nonce received");
+            readByte(encryptedNonce,byteIn);
+            System.out.println("Received encrypted nonce from server");
 
             // ask for certificate
-            stringOut.println("Give me your certificate signed by CA");
+            stringOut.println("CLIENT>> Give me your certificate signed by CA");
             stringOut.flush();
             System.out.println("Sent to server: Give me your certificate signed by CA");
 
             // extract public key from CA certificate
-            InputStream fis = new FileInputStream("D:\\Library\\Documents\\SUTD\\50.005 Computer System Engineering\\NSProjectRelease\\NSProjectRelease\\CA.crt");
+            InputStream fis = new FileInputStream(CACertFile);
             CertificateFactory certificateFactory = CertificateFactory.getInstance("X.509");
             X509Certificate caCert = (X509Certificate) certificateFactory.generateCertificate(fis);
             PublicKey caPublicKey = caCert.getPublicKey();
@@ -67,85 +68,59 @@ public class ClientCP2 {
 
             // retrieve signed certificate from server
             String certByteArrayLength = stringIn.readLine();
-            stringOut.println("getting certificate");
+            stringOut.println("CLIENT>> Ready to get certificate");
             stringOut.flush();
             byte[] certByteArray = new byte[Integer.parseInt(certByteArrayLength)];
-            byteIn.read(certByteArray, 0, certByteArray.length);
+            readByte(certByteArray,byteIn);
+            System.out.println("Received certificate from server");
 
-
-//            System.out.println(new String(certByteArray));
+            // verifying signed certificate from server using CA public key
+            System.out.println("Verifying certificate from server");
             InputStream certInputStream = new ByteArrayInputStream(certByteArray);
             X509Certificate signedCertificate = (X509Certificate) certificateFactory.generateCertificate(certInputStream);
 
             signedCertificate.checkValidity();
             signedCertificate.verify(caPublicKey);
-            System.out.println("Signed certificate received and validity checked");
+            System.out.println("Signed certificate validity checked and verified");
 
-            // create cipher object and initialize is as decrypt mode, using PUBLIC key.
+            // extract public key from server's signed certificate
             PublicKey serverPublicKey = signedCertificate.getPublicKey();
+
+            // create cipher object and initialize it as decrypt mode, using PUBLIC key.
             Cipher cipherDecrypt = Cipher.getInstance("RSA/ECB/PKCS1Padding");
             cipherDecrypt.init(Cipher.DECRYPT_MODE, serverPublicKey);
 
             // decrypt nonce
             byte[] decryptedNonce = cipherDecrypt.doFinal(encryptedNonce);
+
+            // handles connection after decrypting nonce.
             if (Arrays.equals(nonce, decryptedNonce)) {
                 System.out.println("Server's identity verified");
+                stringOut.println("CLIENT>> Ready to upload file!");
+                stringOut.flush();
             } else {
                 System.out.println("Identity verification unsuccessful, closing all connections");
+                stringOut.println("CLIENT>> Bye!");
                 closeConnections(byteOut, byteIn, stringOut, stringIn, socket);
             }
 
-            // create cipher object and initialize is as encrypt mode, use PUBLIC key.
-            Cipher rsaCipherEncrypt = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-            rsaCipherEncrypt.init(Cipher.ENCRYPT_MODE, serverPublicKey);
+
+            // **************** END OF AP ***************
 
             // start file transfer
-            System.out.println("DONE, INITIALIZING FILE TRANSFER");
+            System.out.println("INITIALIZING FILE TRANSFER");
 
+            // initial time mark
+            Long startTime = System.currentTimeMillis();
 
-            // generate AES key
-            KeyGenerator keyGen = KeyGenerator.getInstance("AES");
-            SecretKey aesKey = keyGen.generateKey();
+            // encrypt and upload file - CP2
+            encryptAndUploadFileCP2(stringOut, serverPublicKey, stringIn, byteOut);
 
-            // convert secret key to byte array
-            byte[] aesKeyBytes = aesKey.getEncoded();
+            // confirmation of successful file upload
+            System.out.println(stringIn.readLine());
 
-            // encrypt AES key
-            byte[] encryptedAESKeyBytes = rsaCipherEncrypt.doFinal(aesKeyBytes);
-
-
-            // create cipher object for file encryption
-            Cipher aesEnCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
-            aesEnCipher.init(Cipher.ENCRYPT_MODE, aesKey);
-
-            // get bytes of file needed for transfer
-            File file = new File("D:\\Library\\Documents\\SUTD\\50.005 Computer System Engineering\\NSProjectRelease\\NSProjectRelease\\sampleData\\largeFile.txt");
-            byte[] fileBytes = new byte[(int) file.length()];
-            BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file));
-            bis.read(fileBytes, 0, fileBytes.length);
-
-            // encrypt file with AES key
-            byte[] encryptedFileBytes = aesEnCipher.doFinal(fileBytes);
-
-            // send encrypted AES session key
-            stringOut.println(encryptedAESKeyBytes.length);
-            System.out.println(encryptedAESKeyBytes.length);
-            byteOut.write(encryptedAESKeyBytes, 0, encryptedAESKeyBytes.length);
-            byteOut.flush();
-            System.out.println("sent encrypted aes");
-
-
-
-            // upload encrypted file to server
-            stringOut.println(encryptedFileBytes.length);
-            System.out.println(encryptedFileBytes.length);
-            byteOut.write(encryptedFileBytes, 0, encryptedFileBytes.length);
-            byteOut.flush();
-            System.out.println("sent encrypted file");
-
-            System.out.println("DONE");
-
-
+            Long endTime = System.currentTimeMillis();
+            System.out.println("Uploading time spent is: " + (endTime-startTime) + "ms");
 
 
             closeConnections(byteOut, byteIn, stringOut, stringIn, socket);
@@ -171,5 +146,65 @@ public class ClientCP2 {
         stringOut.close();
         stringIn.close();
         socket.close();
+    }
+
+    private static void readByte(byte[] byteArray, InputStream byteIn) throws Exception{
+        int offset = 0;
+        int numRead = 0;
+        while (offset < byteArray.length && (numRead = byteIn.read(byteArray, offset, byteArray.length - offset)) >= 0){
+            offset += numRead;
+        }
+        if (offset < byteArray.length) {
+            System.out.println("File reception incomplete!");
+        }
+    }
+
+    private static void encryptAndUploadFileCP2(PrintWriter stringOut, PublicKey serverPublicKey, BufferedReader stringIn, OutputStream byteOut) throws Exception{
+
+        // create cipher object and initialize is as encrypt mode, use PUBLIC key.
+        Cipher rsaCipherEncrypt = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        rsaCipherEncrypt.init(Cipher.ENCRYPT_MODE, serverPublicKey);
+
+        // generate AES key
+        KeyGenerator keyGen = KeyGenerator.getInstance("AES");
+        keyGen.init(128);
+        SecretKey aesKey = keyGen.generateKey();
+
+        // convert secret key to byte array
+        byte[] aesKeyBytes = aesKey.getEncoded();
+
+        // encrypt AES key
+        byte[] encryptedAESKeyBytes = rsaCipherEncrypt.doFinal(aesKeyBytes);
+
+        // create cipher object for file encryption
+        Cipher aesEnCipher = Cipher.getInstance("AES/ECB/PKCS5Padding");
+        aesEnCipher.init(Cipher.ENCRYPT_MODE, aesKey);
+
+        // get bytes of file needed for transfer
+        File file = new File(uploadFile);
+        byte[] fileBytes = new byte[(int) file.length()];
+        BufferedInputStream bis = new BufferedInputStream(new FileInputStream(file));
+        bis.read(fileBytes, 0, fileBytes.length);
+
+        // encrypt file with AES key
+        byte[] encryptedFileBytes = aesEnCipher.doFinal(fileBytes);
+
+        // send encrypted AES session key
+        stringOut.println(encryptedAESKeyBytes.length);
+        stringOut.flush();
+        System.out.println(stringIn.readLine());
+        byteOut.write(encryptedAESKeyBytes, 0, encryptedAESKeyBytes.length);
+        byteOut.flush();
+        System.out.println("Sent to server encrypted session key");
+
+
+        // upload encrypted file to server
+        stringOut.println(encryptedFileBytes.length);
+        stringOut.flush();
+        System.out.println(stringIn.readLine());
+        byteOut.write(encryptedFileBytes, 0, encryptedFileBytes.length);
+        byteOut.flush();
+        System.out.println("Sent to server encrypted file");
+
     }
 }
