@@ -1,4 +1,4 @@
-package CSE_Project;
+package CSElabs;
 
 import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
@@ -8,102 +8,129 @@ import java.io.*;
 import java.nio.file.*;
 import java.security.*;
 import java.security.spec.PKCS8EncodedKeySpec;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ServerCP2 {
+    private static final int NTHREADS = 5;
+    private static ExecutorService executorService = Executors.newFixedThreadPool(NTHREADS);
+    private static ServerSocket serverSocket;
     private static final int PORT_NUMBER = 1234;
-    private static final String privateKeyFile = "D:\\Library\\Documents\\SUTD\\50.005 Computer System Engineering\\NSProjectRelease\\NSProjectRelease\\privateServer.der";
-    private static final String signedCertificateFile = "D:\\Library\\Documents\\SUTD\\50.005 Computer System Engineering\\NSProjectRelease\\NSProjectRelease\\Signed Certificate - 1001294.crt";
-    private static final String uploadedFile = "data.txt";
+    private static final String privateKeyFile = "C:\\Users\\Esmond\\Desktop\\NSAssignment\\privateServer.der";
+    private static final String signedCertificateFile = "C:\\Users\\Esmond\\Desktop\\NSAssignment\\Signed Certificate - 1001294.crt";
 
     public static void main(String[] args) {
         try {
             // create TCP ServerSocket to listen
-            // then create TCP ClientSocket upon accepting incoming TCP request
-            ServerSocket serverSocket = new ServerSocket(PORT_NUMBER);
-            System.out.println("... expecting connection ...");
-            Socket clientSocket = serverSocket.accept();
-            System.out.println("... connection established...");
-
-            // channels for sending and receiving bytes
-            OutputStream byteOut = clientSocket.getOutputStream();
-            InputStream byteIn = clientSocket.getInputStream();
-
-            // channels for sending and receiving plain text
-            PrintWriter stringOut = new PrintWriter(clientSocket.getOutputStream(), true);
-            BufferedReader stringIn = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-
-            // wait for client to initiate conversation
-            System.out.println(stringIn.readLine());
-
-            // reply to client
-            stringOut.println("SERVER>> Hello, this is SecStore!");
-            stringOut.flush();
-            System.out.println("Sent to client: Hello, this is SecStore!");
-
-            // retrieve nonce from client
-            String nonceLength = stringIn.readLine();
-            byte[] nonce = new byte[Integer.parseInt(nonceLength)];
-            readByte(nonce,byteIn);
-            System.out.println("Received fresh nonce from client");
-
-            // load private key from .der
-            PrivateKey privateKey = loadPrivateKey();
-
-            // Create cipher object and initialize is as encrypt mode, use PRIVATE key.
-            Cipher rsaCipherEncrypt = Cipher.getInstance("RSA/ECB/PKCS1Padding");
-            rsaCipherEncrypt.init(Cipher.ENCRYPT_MODE, privateKey);
-
-            // encrypt nonce
-            byte[] encryptedNonce = rsaCipherEncrypt.doFinal(nonce);
-            stringOut.println(Integer.toString(encryptedNonce.length));
-            byteOut.write(encryptedNonce, 0, encryptedNonce.length);
-            byteOut.flush();
-            System.out.println("Sent to client encrypted nonce");
-
-            // wait for client response
-            System.out.println(stringIn.readLine());
-
-            // send signed certificate
-            File certificateFile = new File(signedCertificateFile);
-            byte[] certByteArray = new byte[(int) certificateFile.length()];
-            BufferedInputStream bis = new BufferedInputStream(new FileInputStream(certificateFile));
-            bis.read(certByteArray, 0, certByteArray.length);
-
-            stringOut.println(Integer.toString(certByteArray.length));
-            System.out.println(stringIn.readLine());
-            byteOut.write(certByteArray, 0, certByteArray.length);
-            byteOut.flush();
-            System.out.println("Sent to client certificate");
-
-            // receive messages from client
-            String clientResult = stringIn.readLine();
-            System.out.println(clientResult);
-            if (clientResult.contains("Bye!")) {
-                closeConnections(byteOut, byteIn, stringOut, stringIn, clientSocket);
-            }
-
-
-            // **************** END OF AP ***************
-
-
-            // start file transfer
-            System.out.println("INITIALIZING FILE TRANSFER");
-
-            // download and decrypt file - CP2
-            downloadAndDecryptFileCP2(stringOut, stringIn, byteIn, privateKey);
-
-            // send confirmation of successful upload to client
-            stringOut.println("SERVER>> Upload file successful!");
-            stringOut.flush();
-
-            closeConnections(byteOut, byteIn, stringOut, stringIn, clientSocket);
-
-        } catch (Exception e) {
+            serverSocket = new ServerSocket(PORT_NUMBER);
+        } catch (IOException e) {
             e.printStackTrace();
+        }
+
+        // constantly listening for clients who want to connect
+        while (true) {
+            try {
+                // then create TCP ClientSocket upon accepting incoming TCP request
+                System.out.println("... expecting connection ...");
+                final Socket clientSocket = serverSocket.accept();
+                System.out.println("... connection established...");
+
+                // create threads to handle multiple client uploads
+                Runnable task = new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            handleClient(clientSocket);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    }
+                };
+                executorService.execute(task);
+
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
         }
     }
 
-    private static PrivateKey loadPrivateKey() throws Exception{
+    private static void handleClient(Socket clientSocket) throws Exception {
+        // channels for sending and receiving bytes
+        OutputStream byteOut = clientSocket.getOutputStream();
+        InputStream byteIn = clientSocket.getInputStream();
+
+        // channels for sending and receiving plain text
+        PrintWriter stringOut = new PrintWriter(clientSocket.getOutputStream(), true);
+        BufferedReader stringIn = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+
+        // wait for client to initiate conversation
+        System.out.println(stringIn.readLine());
+
+        // reply to client
+        stringOut.println("SERVER>> Hello, this is SecStore!");
+        stringOut.flush();
+        System.out.println("Sent to client: Hello, this is SecStore!");
+
+        // retrieve nonce from client
+        String nonceLength = stringIn.readLine();
+        byte[] nonce = new byte[Integer.parseInt(nonceLength)];
+        readByte(nonce,byteIn);
+        System.out.println("Received fresh nonce from client");
+
+        // load private key from .der
+        PrivateKey privateKey = loadPrivateKey();
+
+        // Create cipher object and initialize is as encrypt mode, use PRIVATE key.
+        Cipher rsaCipherEncrypt = Cipher.getInstance("RSA/ECB/PKCS1Padding");
+        rsaCipherEncrypt.init(Cipher.ENCRYPT_MODE, privateKey);
+
+        // encrypt nonce
+        byte[] encryptedNonce = rsaCipherEncrypt.doFinal(nonce);
+        stringOut.println(Integer.toString(encryptedNonce.length));
+        byteOut.write(encryptedNonce, 0, encryptedNonce.length);
+        byteOut.flush();
+        System.out.println("Sent to client encrypted nonce");
+
+        // wait for client response
+        System.out.println(stringIn.readLine());
+
+        // send signed certificate
+        File certificateFile = new File(signedCertificateFile);
+        byte[] certByteArray = new byte[(int) certificateFile.length()];
+        BufferedInputStream bis = new BufferedInputStream(new FileInputStream(certificateFile));
+        bis.read(certByteArray, 0, certByteArray.length);
+
+        stringOut.println(Integer.toString(certByteArray.length));
+        System.out.println(stringIn.readLine());
+        byteOut.write(certByteArray, 0, certByteArray.length);
+        byteOut.flush();
+        System.out.println("Sent to client certificate");
+
+        // receive messages from client
+        String clientResult = stringIn.readLine();
+        System.out.println(clientResult);
+        if (clientResult.contains("Bye!")) {
+            closeConnections(byteOut, byteIn, stringOut, stringIn, clientSocket);
+        }
+
+
+        // **************** END OF AP ***************
+
+
+        // start file transfer
+        System.out.println("INITIALIZING FILE TRANSFER");
+
+        // download and decrypt file - CP2
+        downloadAndDecryptFileCP2(stringOut, stringIn, byteIn, privateKey);
+
+        // send confirmation of successful upload to client
+        stringOut.println("SERVER>> Upload file successful!");
+        stringOut.flush();
+
+        closeConnections(byteOut, byteIn, stringOut, stringIn, clientSocket);
+    }
+
+    private static PrivateKey loadPrivateKey() throws Exception {
         Path privateKeyPath = Paths.get(privateKeyFile);
         byte[] privateKeyByteArray = Files.readAllBytes(privateKeyPath);
 
@@ -145,6 +172,7 @@ public class ServerCP2 {
 
 
         // get encrypted file from client
+        String fileName = stringIn.readLine();
         String encryptedFileBytesLength = stringIn.readLine();
         stringOut.println("SERVER>> Ready to receive encrypted file");
         stringOut.flush();
@@ -173,7 +201,7 @@ public class ServerCP2 {
         System.out.println("File decrypted");
 
         // create new file and write to file
-        FileOutputStream fileOut = new FileOutputStream(uploadedFile);
+        FileOutputStream fileOut = new FileOutputStream(fileName);
         fileOut.write(fileBytes, 0, fileBytes.length);
         System.out.println("File registered into system.");
 

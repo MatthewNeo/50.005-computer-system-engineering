@@ -1,5 +1,4 @@
-package CSE_Project;
-
+package CSElabs;
 
 import javax.crypto.Cipher;
 import java.io.*;
@@ -13,10 +12,11 @@ import java.security.cert.X509Certificate;
 import java.util.Arrays;
 
 public class ClientCP1 {
-    private static final String SERVER_NAME = "localhost";
+    private static final String SERVER_NAME = "172.23.16.218";
     private static final int SERVER_PORT = 1234;
-    private static final String uploadFile = "D:\\Library\\Documents\\SUTD\\50.005 Computer System Engineering\\NSProjectRelease\\NSProjectRelease\\sampleData\\largeFile.txt";
-    private static final String CACertFile = "D:\\Library\\Documents\\SUTD\\50.005 Computer System Engineering\\NSProjectRelease\\NSProjectRelease\\CA.crt";
+    private static final String uploadFilePath = "C:\\Users\\Esmond\\Desktop\\NSAssignment\\largeFile.txt";
+    private static final String uploadFileName = "largeFile.txt";
+    private static final String CACertFile = "C:\\Users\\Esmond\\Desktop\\NSAssignment\\CA.crt";
 
     public static void main(String[] args) {
         try {
@@ -119,9 +119,10 @@ public class ClientCP1 {
             rsaCipherEncrypt.init(Cipher.ENCRYPT_MODE, serverPublicKey);
 
             // start file transfer
-            byte[] encryptedFile = encryptFileCP1(uploadFile, rsaCipherEncrypt);
+            byte[] encryptedFile = encryptFileCP1(uploadFilePath, rsaCipherEncrypt);
 
             // send encrypted file
+            stringOut.println(uploadFileName);
             stringOut.println(encryptedFile.length);
             System.out.println(stringIn.readLine());
             byteOut.write(encryptedFile, 0, encryptedFile.length);
