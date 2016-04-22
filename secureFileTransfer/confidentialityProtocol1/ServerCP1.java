@@ -14,8 +14,8 @@ public class ServerCP1 {
     private static ExecutorService executorService = Executors.newFixedThreadPool(NTHREADS);
     private static ServerSocket serverSocket;
     private static final int PORT_NUMBER = 1234;
-    private static final String privateKeyFile = "C:\\Users\\Esmond\\Desktop\\NSAssignment\\privateServer.der";
-    private static final String signedCertificateFile = "C:\\Users\\Esmond\\Desktop\\NSAssignment\\Signed Certificate - 1001294.crt";
+    private static final String privateKeyFile = "C:\\privateServer.der";
+    private static final String signedCertificateFile = "C:\\Signed Certificate - 1001294.crt";
 
     public static void main(String[] args) {
         try {

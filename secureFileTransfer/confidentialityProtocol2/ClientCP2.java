@@ -11,11 +11,11 @@ import java.security.cert.X509Certificate;
 import java.util.Arrays;
 
 public class ClientCP2 {
-    private static final String SERVER_NAME = "172.23.16.218";
+    private static final String SERVER_NAME = "localhost";
     private static final int SERVER_PORT = 1234;
-    private static final String uploadFilePath = "C:\\Users\\Esmond\\Desktop\\NSAssignment\\largeFile.txt";
+    private static final String uploadFilePath = "C:\\largeFile.txt";
     private static final String uploadFileName = "largeFile.txt";
-    private static final String CACertFile = "C:\\Users\\Esmond\\Desktop\\NSAssignment\\CA.crt";
+    private static final String CACertFile = "C:\\CA.crt";
 
     public static void main(String[] args) {
         try {
